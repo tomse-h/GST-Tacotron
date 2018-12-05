@@ -13,29 +13,27 @@ from scipy.io.wavfile import write
 from time import time
 import matplotlib.pyplot as plt
 import os
-import sys
-# import cv2
-
+import argparse
 
 device = torch.device(hp.device)
 
 
-def train(log_dir, dataset_size, start_epoch=0):
+def train(args):
     # log directory
-    if not os.path.exists(log_dir):
-        os.mkdir(log_dir)
-    if not os.path.exists(os.path.join(log_dir, 'state')):
-        os.mkdir(os.path.join(log_dir, 'state'))
-    if not os.path.exists(os.path.join(log_dir, 'wav')):
-        os.mkdir(os.path.join(log_dir, 'wav'))
-    if not os.path.exists(os.path.join(log_dir, 'state_opt')):
-        os.mkdir(os.path.join(log_dir, 'state_opt'))
-    if not os.path.exists(os.path.join(log_dir, 'attn')):
-        os.mkdir(os.path.join(log_dir, 'attn'))
-    if not os.path.exists(os.path.join(log_dir, 'test_wav')):
-        os.mkdir(os.path.join(log_dir, 'test_wav'))
+    if not os.path.exists(args.logdir):
+        os.mkdir(args.logdir)
+    if not os.path.exists(os.path.join(args.logdir, 'state')):
+        os.mkdir(os.path.join(args.logdir, 'state'))
+    if not os.path.exists(os.path.join(args.logdir, 'wav')):
+        os.mkdir(os.path.join(args.logdir, 'wav'))
+    if not os.path.exists(os.path.join(args.log_dir, 'state_opt')):
+        os.mkdir(os.path.join(args.logdir, 'state_opt'))
+    if not os.path.exists(os.path.join(args.log_dir, 'attn')):
+        os.mkdir(os.path.join(args.logdir, 'attn'))
+    if not os.path.exists(os.path.join(args.logdir, 'test_wav')):
+        os.mkdir(os.path.join(args.logdir, 'test_wav'))
 
-    f = open(os.path.join(log_dir, 'log{}.txt'.format(start_epoch)), 'w')
+    f = open(os.path.join(args.logdir, 'log_0.txt','w'))
 
     msg = 'use {}'.format(hp.device)
     print(msg)
@@ -43,21 +41,19 @@ def train(log_dir, dataset_size, start_epoch=0):
 
     # load model
     model = Tacotron().to(device)
-    if start_epoch != 0:
-        model_path = os.path.join(log_dir, 'state', 'epoch{}.pt'.format(start_epoch))
-        model.load_state_dict(torch.load(model_path))
-        msg = 'Load model of' + model_path
+    if args.checkpoint:
+        model.load_state_dict(torch.load(args.heckpoint))
+        msg = 'Load model from checkpoint ' + args.checkpoint
     else:
-        msg = 'New model'
+        msg = 'Starting fresh Training'
     print(msg)
     f.write(msg + '\n')
 
     # load optimizer
     optimizer = optim.Adam(model.parameters(), lr=hp.lr)
-    if start_epoch != 0:
-        opt_path = os.path.join(log_dir, 'state_opt', 'epoch{}.pt'.format(start_epoch))
-        optimizer.load_state_dict(torch.load(opt_path))
-        msg = 'Load optimizer of' + opt_path
+    if args.checkpoint:
+        optimizer.load_state_dict(args.checkpoint)
+        msg = 'Load optimizer from checkpoint: ' + args.checkpoint
     else:
         msg = 'New optimizer'
     print(msg)
@@ -74,21 +70,18 @@ def train(log_dir, dataset_size, start_epoch=0):
     criterion = TacotronLoss()  # Loss
 
     # load data
-    if dataset_size is None:
-        train_dataset = SpeechDataset(r=slice(hp.eval_size, None))
-    else:
-        train_dataset = SpeechDataset(r=slice(hp.eval_size, hp.eval_size + dataset_size))
+    train_dataset = SpeechDataset(args.data_dir)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=hp.batch_size, collate_fn=collate_fn, num_workers=8, shuffle=True)
 
     num_train_data = len(train_dataset)
     total_step = hp.num_epochs * num_train_data // hp.batch_size
-    start_step = start_epoch * num_train_data // hp.batch_size
+    start_step = num_train_data // hp.batch_size
     step = 0
     global_step = step + start_step
     prev = beg = int(time())
 
-    for epoch in range(start_epoch + 1, hp.num_epochs):
+    for epoch in range(1, hp.num_epochs):
 
         model.train(True)
         for i, batch in enumerate(train_loader):
@@ -135,8 +128,8 @@ def train(log_dir, dataset_size, start_epoch=0):
 
         # save model, optimizer and evaluate
         if epoch % hp.save_per_epoch == 0 and epoch != 0:
-            torch.save(model.state_dict(), os.path.join(log_dir, 'state/epoch{}.pt'.format(epoch)))
-            torch.save(optimizer.state_dict(), os.path.join(log_dir, 'state_opt/epoch{}.pt'.format(epoch)))
+            torch.save(model.state_dict(), os.path.join(args.logdir, 'state/epoch{}.pt'.format(epoch)))
+            torch.save(optimizer.state_dict(), os.path.join(args.logdir, 'state_opt/epoch{}.pt'.format(epoch)))
             msg = 'save model, optimizer in epoch{}'.format(epoch)
             f.write(msg + '\n')
             print(msg)
@@ -159,17 +152,17 @@ def train(log_dir, dataset_size, start_epoch=0):
                 plt.imshow(attn.T, cmap='hot', interpolation='nearest')
                 plt.xlabel('Decoder Steps')
                 plt.ylabel('Encoder Steps')
-                fig_path = os.path.join(log_dir, 'attn/epoch{}-{}.png'.format(epoch, name))
+                fig_path = os.path.join(args.logdir, 'attn/epoch{}-{}.png'.format(epoch, name))
                 plt.savefig(fig_path, format='png')
 
                 wav = spectrogram2wav(mag_hat)
-                write(os.path.join(log_dir, 'wav/epoch{}-{}.wav'.format(epoch, name)), hp.sr, wav)
+                write(os.path.join(args.logdir, 'wav/epoch{}-{}.wav'.format(epoch, name)), hp.sr, wav)
 
             msg = 'synthesis eval wav in epoch{} model'.format(epoch)
             print(msg)
             f.write(msg)
 
-    msg = 'Training Finish !!!!'
+    msg = 'Finished Training'
     f.write(msg + '\n')
     print(msg)
 
@@ -202,11 +195,11 @@ def set_lr(optimizer, step, f):
 
 
 if __name__ == '__main__':
-    argv = sys.argv
-    log_number = int(argv[1])
-    start_epoch = int(argv[3])
-    if argv[2].lower() != 'all':
-        dataset_size = int(argv[2])
-    else:
-        dataset_size = None
-    train(hp.log_dir.format(log_number), dataset_size, start_epoch)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--logdir=", default="logs-Tacotron_GST")
+    parser.add_argument("--base_dir=", default='')
+    parser.add_argument("--training_data=", default="training_data")
+    parser.add_argument("--checkpoint=", default=None)
+    parser.add_argument("--data_dir=", default="")
+    args = parser.parse_args
+    train(args)

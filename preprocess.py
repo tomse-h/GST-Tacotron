@@ -1,7 +1,7 @@
 from cutoff import cutoff
 import os
 from os.path import join
-
+import argparse
 from Hyperparameters import Hyperparameters as hp
 
 
@@ -25,4 +25,7 @@ def preprocess(base_dir):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir=", default="")
+    args = parser.parse_args
     preprocess(hp.data)

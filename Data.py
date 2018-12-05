@@ -3,11 +3,11 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 
 from utils import *
-
+import Hyperparameters as hp
 import os
 import unicodedata
 import re
-
+import argparse
 
 class SpeechDataset(Dataset):
     '''
@@ -16,10 +16,10 @@ class SpeechDataset(Dataset):
     mag: [T_y, 1+n_fft/2]
     '''
 
-    def __init__(self, r=slice(0, None)):
+    def __init__(self):
         print('Start loading data')
         # fpaths, texts = get_data(hp.data, r)  # thchs30
-        fpaths, texts = get_keda_data(hp.data, r)  # keda api
+        fpaths, texts = get_LJ_data()  # keda api
         # fpaths, texts = get_thchs30_data(hp.data, r)
         print('Finish loading data')
         self.fpaths = fpaths
@@ -87,93 +87,7 @@ def pad_sequence(sequences):
     return out
 
 
-def get_keda_data(dataset_dir, r):
-    wav_paths = []
-    texts = []
-
-    wav_dirs = ['nannan', 'xiaofeng', 'donaldduck']
-    csv_paths = ['transcript-nannan.csv', 'transcript-xiaofeng.csv', 'transcript-donaldduck.csv']
-    for wav_dir, csv_path in zip(wav_dirs, csv_paths):
-        csv = open(os.path.join(dataset_dir, csv_path), 'r')
-        for line in csv.readlines():
-            items = line.strip().split('|')
-            wav_paths.append(os.path.join(dataset_dir, wav_dir, items[0] + '.wav'))
-            text = text_normalize(items[1]) + 'E'
-            text = [hp.char2idx[c] for c in text]
-            text = torch.Tensor(text).type(torch.LongTensor)
-            texts.append(text)
-        csv.close()
-
-    for wav in wav_paths[-20:]:
-        print(wav)
-
-    return wav_paths[r], texts[r]
-
-
-def get_thchs30_data(dataset_dir, r):
-    wav_paths = []
-    text_paths = []
-
-    data_dir = os.path.join(dataset_dir, 'data')
-    for file in os.listdir(data_dir):
-        file_path = os.path.join(data_dir, file)
-        fname, ext = os.path.splitext(file_path)
-        if ext == '.wav' and fname[-7:] != '_cutoff':
-            wav_paths.append(fname + '_cutoff' + ext)
-            text_paths.append(file_path + '.trn')
-
-    train_dir = os.path.join(dataset_dir, 'train')
-    test_dir = os.path.join(dataset_dir, 'test')
-    dev_dir = os.path.join(dataset_dir, 'dev')
-
-    for d in [train_dir, test_dir, dev_dir]:
-        for file in os.listdir(d):
-            file_path = os.path.join(d, file)
-            fname, ext = os.path.splitext(file_path)
-            if ext == '.wav' and fname[-7:] != '_cutoff':
-                text_path = os.path.join(data_dir, file + '.trn')
-                wav_paths.append(fname + '_cutoff' + ext)
-                text_paths.append(text_path)
-
-    for wav, txt in zip(wav_paths[-20:], text_paths[-20:]):
-        print(wav, txt)
-
-    texts = []
-    for file in text_paths[r]:
-        f = open(file, 'r', encoding='utf-8')
-        text = f.readlines()[1].strip()
-        text = text_normalize(text) + 'E'
-        text = [hp.char2idx[c] for c in text]
-        text = torch.Tensor(text).type(torch.LongTensor)
-        texts.append(text)
-
-    print(wav_paths[r][0], text_paths[r][0])
-
-    return wav_paths[r], texts
-
-
-def get_aishell_data(data_dir, r):
-    path = os.path.join(data_dir, 'transcript.txt')
-    data_dir = os.path.join(data_dir, 'wav', 'train')
-    wav_paths = []
-    texts = []
-    with open(path, 'r') as f:
-        for line in f.readlines():
-            items = line.strip().split('|')
-            wav_paths.append(os.path.join(data_dir, items[0] + '.wav'))
-            text = items[1]
-            text = text_normalize(text) + 'E'
-            text = [hp.char2idx[c] for c in text]
-            text = torch.Tensor(text).type(torch.LongTensor)
-            texts.append(text)
-
-    for wav, txt in zip(wav_paths[-20:], texts[-20:]):
-        print(wav, txt)
-
-    return wav_paths[r], texts[r]
-
-
-def get_LJ_data(data_dir, r):
+def get_LJ_data(data_dir):
     path = os.path.join(data_dir, 'transcript.csv')
     data_dir = os.path.join(data_dir, 'wavs')
     wav_paths = []
@@ -191,7 +105,7 @@ def get_LJ_data(data_dir, r):
     for wav in wav_paths[-20:]:
         print(wav)
 
-    return wav_paths[r], texts[r]
+    return wav_paths, texts
 
 
 def get_eval_data(text, wav_path):
@@ -217,7 +131,12 @@ def get_eval_data(text, wav_path):
 
 
 if __name__ == '__main__':
-    dataset = LJDataset()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir=", default="")
+    args = parser.parse_args
+
+
+    dataset = get_LJ_data(args.data_dir)
     loader = DataLoader(dataset=dataset, batch_size=8, collate_fn=collate_fn)
 
     for batch in loader:
